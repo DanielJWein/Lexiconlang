@@ -1,0 +1,395 @@
+﻿@page "/dictionary"
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider ASP
+@using Lexiconlang.Data.Dict;
+
+
+
+<AuthorizeView>
+    <Authorized>
+        
+
+        <PageTitle>Dictionary Editor</PageTitle>
+
+        <style>
+            * {
+            }
+
+            .word-list {
+                /*font-family: 'udenicregular';*/
+                float: left;
+                display: inline-block;
+                width: 40%;
+                border-right: 1px solid #aaa;
+            }
+
+            .word-definition {
+                border-bottom: 1px solid #eee;
+            }
+
+            .word-view *, #pageHeader {
+                /*font-family: 'udenicregular';*/
+            }
+
+            .word-view {
+                float: right;
+                display: inline-block;
+                width: 59%;
+            }
+
+            .language {
+                font-size: 0.5em;
+                display: inline-block;
+                margin-right: 4px;
+            }
+
+            .example {
+                margin-top: 0;
+                margin-bottom: 0;
+                font-style: italic;
+            }
+
+            .notes {
+                font-style: italic;
+                color: #aaa;
+                font-weight: lighter;
+                margin-left: 1em;
+            }
+
+        </style>
+        <script suppress-error="BL9992">
+            function swapViews(showEditor) {
+                if (showEditor) {
+                    document.getElementById("word-view").style.display = "none";
+                    document.getElementById("word-edit-view").style.display = "block";
+                }
+                else {
+                    document.getElementById("word-view").style.display = "block";
+                    document.getElementById("word-edit-view").style.display = "none";
+                }
+            }
+
+            function displayAlert(message) {
+                return confirm(message);
+            }
+
+        </script>
+
+        <!-- Header -->
+        <div style="width:100%; height:8em;">
+            <div style="float:left;width:35vw;">
+                <h1 id="pageHeader" style="display:inline-block"> @lexicon.InputLanguage - @lexicon.OutputLanguage</h1>
+                <br />
+                <p>@lexicon.GetEntries().Count() entries</p>
+                <button class="btn btn-primary" style="display:inline-block" @onclick="onClickNewWord">Add Word</button>
+            </div>
+            <div style="float:right;display:inline-block;width:35vw;">
+                <InputSelect @bind-Value="@selectedDatabase" @onchange="onChangeLoadedDictionary">
+                    @foreach(var v in lxc.GetAllLanguageNames())
+                    {
+                        <option value="@(v.Item1 +"_"+ v.Item2)">@(v.Item1 +"_"+ v.Item2)</option>
+                    }
+                </InputSelect>
+                <InputText @bind-Value="dictionaryName1">Familiar</InputText>
+                <InputText @bind-Value="dictionaryName2">Unfamiliar</InputText>
+                <button class="btn btn-primary" style="display:inline-block" @onclick="onClickNewDictionary">Add Dictionary</button>
+                <button class="btn btn-primary" style="display:inline-block" @onclick="onClickAnnihilateDictionary">Annihilate Dictionary</button>
+            </div>
+        </div>
+        <hr />
+        <!-- End Header -->
+
+        <div class="main-content">
+
+            <!--       WORD LIST       -->
+            <div class="word-list" style="overflow-y: scroll">
+                @foreach ( var forecast in lexicon.GetEntries( ) ) {
+                    <div style="width:80%; height:4em; border-bottom: 1px solid #aaa;padding:4px; border-top: 1px solid #aaa">
+                        <a @onclick="@(()=>Clickma(@forecast.Word))">
+                            <h4>@forecast.Word</h4>
+                            @try {
+                                <h5>@(forecast.GetDefinition( 1 )?.Definition ?? "<- No Definitions ->")</h5>
+                            }
+                            catch ( NullReferenceException e ) {
+                                <h5> - No definitions - </h5>
+                            }
+                        </a>
+                    </div>
+                }
+            </div>
+
+
+            <!--       WORD VIEW       -->
+            <div id="word-view" class="word-view" style="height: 100%; overflow-y: scroll">
+                @if ( selectedWord is not null ) {
+
+                    <!-- Language, name, delete/edit buttons-->
+                    <h3>
+                        <!-- Language -->
+                        <span class="language">@lexicon.OutputLanguage</span>
+
+                        <!-- Name -->
+                        @if ( !Editing ) {
+                            @selectedWord.Word
+                        }
+                        else {
+                            <InputText @bind-Value="@selectedWord.Word">@selectedWord.Word</InputText>
+                        }
+
+                        <!-- Delete/edit buttons-->
+                        <button class="btn btn-primary" style="float:right;" id="word-edit" @onclick="onClickEdit">
+                            <!-- Edit Button Text -->
+                        @EditText
+                        </button>
+                        @if ( !Editing ) {
+                            <button class="btn btn-primary" style="float:right;" id="word-delete" @onclick="onClickDelete"> Delete </button>
+                        }
+                    </h3>
+
+                    <!--Show definitions header-->
+                    //@if ( selectedWord.GetAllDefinitions( ).Any( ) ) {
+                    <h6 style="border-bottom: 1px solid black;width:100%;">Definitions</h6>
+                    @if ( Editing ) {
+                        <button class="btn btn-primary" style="float:right; display:inline-block;" @onclick="onClickNewDef">New</button>
+                    }
+                    //}
+
+                    @foreach ( var def in selectedWord.GetAllDefinitions( ) ) {
+                        <div class="word-definition">
+                            <p style="margin-bottom: 0;">
+                                @def.DefinitionNumber.
+                                @if ( !Editing ) {
+                                    @def.Definition
+                                }
+                                else {
+                                    <InputText @bind-Value="@def.Definition">@def.Definition</InputText>
+                                }
+                                @if ( !Editing ) {
+
+                                    @if ( def.Notes is not null ) {
+                                        <span class="notes">@def.Notes</span>
+                                    }
+                                }
+                                else {
+                                    <span class="notes">
+                                        <InputText @bind-Value="@def.Notes">@def.Notes</InputText>
+                                    </span>
+                                }
+                                <span style="float:right;">
+                                    @if ( !Editing ) {
+                                        @def.PartOfSpeech
+                                    }
+                                    else {
+                                        <InputText @bind-Value="@def.PartOfSpeech">@def.PartOfSpeech</InputText>
+                                    }
+                                </span>
+
+                                @if ( Editing ) {
+                                    <button class="btn btn-primary" @onclick="()=>onClickDeleteDef(def.DefinitionNumber)">Delete</button>
+                                }
+                            </p>
+                            @if ( !Editing ) {
+
+                                @if ( def.ExampleSentence is not null ) {
+                                    <p class="example"> <span class="language">@lexicon.OutputLanguage</span> @def.ExampleSentence</p>
+                                }
+                            }
+                            else {
+                                <p class="example">
+                                    <span class="language">
+                                        @lexicon.OutputLanguage
+                                    </span> <InputText @bind-Value="@def.ExampleSentence">@def.ExampleSentence</InputText>
+                                </p>
+                            }
+                            @if ( !Editing ) {
+
+                                @if ( def.ExampleTranslation is not null ) {
+                                    <p class="example"> <span class="language">@lexicon.InputLanguage</span> @def.ExampleTranslation</p>
+                                }
+                            }
+                            else {
+                                <p class="example">
+                                    <span class="language">
+                                        @lexicon.InputLanguage
+                                    </span> <InputText @bind-Value="@def.ExampleTranslation">@def.ExampleTranslation</InputText>
+                                </p>
+                            }
+
+
+                        </div>
+                    }
+                }
+
+            </div>
+
+        </div>
+        @code {
+            private Random randy = new();
+        private string selected_database = "";
+        bool initialized = false;
+        private string selectedDatabase {
+            get => selected_database;
+            set {
+                if ( value != selected_database ) {
+                    selected_database = value;
+                    lexicon = lxc.ReadEntireLexicon( value.ToLower( ) );
+                }
+            }
+        }
+
+        private string dictionaryName1 = "";
+        private string dictionaryName2 = "";
+
+        private Lexicon lexicon = new("English", "Spanish");
+        private string EditText => Editing ? "Stop Editing" : "Edit";
+        private DictionaryEntry? selectedWord = null;
+        private bool Editing = false;
+
+        Data.Database.LexiconlangDatabase lxc = new();
+
+        void onChangeLoadedDictionary( ChangeEventArgs e ) {
+            if ( !initialized )
+                return;
+            lexicon = lxc.ReadEntireLexicon( selectedDatabase.Replace( " - ", "_" ) );
+        }
+        void onClickAnnihilateDictionary( ) {
+            if ( !initialized )
+                return;
+            lxc.DropLexicon(lexicon.InternalDictionaryName);
+            var lexiconName = lxc.GetAllLanguageNames().FirstOrDefault();
+            if(lexiconName == null) {
+                lexicon = new("English", "Spanish");
+                lxc.SaveLexicon(lexicon);
+            }
+            else {
+                lexicon = lxc.ReadEntireLexicon(lexiconName.Item1 + "_" + lexiconName.Item2);
+            }
+        }
+
+        async void onClickNewDictionary( ) {
+            if ( !initialized )
+                return;
+            if ( string.IsNullOrWhiteSpace( dictionaryName1 )
+            || string.IsNullOrWhiteSpace( dictionaryName2 ) )
+                return;
+
+
+            var x = lxc.GetAllLanguageNames();
+            if ( x.Any( x => dictionaryName1 == x.Item1 && dictionaryName2 == x.Item2 ) ) {
+                await JS.InvokeVoidAsync( "alert", "This dictionary already exists." );
+                return;
+            }
+            lexicon = new Lexicon( dictionaryName1, dictionaryName2 );
+            lexicon.AddEntry( new DictionaryEntry( "New Word" ) );
+            lxc.SaveLexicon( lexicon );
+        }
+        void onClickDeleteDef( int whodunnit ) {
+            if ( !initialized )
+                return;
+            selectedWord.RemoveDefinition( selectedWord.GetDefinition( whodunnit ) );
+            int id = 1;
+            foreach ( var v in selectedWord.GetAllDefinitions( ) ) {
+                v.DefinitionNumber = id++;
+            }
+            StateHasChanged( );
+        }
+        void onClickNewWord( ) {
+            if ( !initialized )
+                return;
+            DictionaryEntry a = new DictionaryEntry("Enter word here!");
+
+            lexicon.AddEntry( a );
+            selectedWord = a;
+            Editing = true;
+            StateHasChanged( );
+        }
+        async void onClickDelete( ) {
+            if ( !initialized )
+                return;
+            bool really = await JS.InvokeAsync<bool>("displayAlert", "Are you sure you want to delete this word?");
+            if ( really ) {
+                lxc.UnregisterWord( lexicon.InternalDictionaryName, selectedWord, true );
+                lexicon.RemoveEntry( selectedWord );
+                selectedWord = lexicon.GetEntries( ).FirstOrDefault( );
+                StateHasChanged( );
+                //lxc.SaveLexicon(lexicon);
+            }
+        }
+        async void onClickNewDef( ) {
+            if ( !initialized )
+                return;
+            DictionaryDefinition d = new DictionaryDefinition(selectedWord.NumDefinitions + 1, "", "", "", "", "");
+            selectedWord.AddDefinition( d );
+            Editing = true;
+            StateHasChanged( );
+        }
+        async void onClickEdit( ) {
+            if ( !initialized )
+                return;
+            if ( selectedWord == null )
+                return;
+            Editing = !Editing;
+            //await JS.InvokeVoidAsync( "swapViews", new Object[ ] { Editing } );
+            if ( !Editing ) {
+                try {
+                    lxc.UnregisterWord( lexicon.InternalDictionaryName, selectedWord, true );
+                    lxc.RegisterWords( lexicon.InternalDictionaryName, selectedWord );
+                }
+                catch (Data.Database.LexiconlangDatabaseNoTableException) {
+                    lxc.SaveLexicon( lexicon );
+                }
+            }
+            StateHasChanged( );
+        }
+        DictionaryEntry addWord( string word, string definition ) {
+            DictionaryEntry de = new(word);
+            DictionaryDefinition def = new(1, "Noun", definition);
+            de.AddDefinition( def );
+
+            lexicon.AddEntry( de );
+            return de;
+        }
+        //stol https://stackoverflow.com/questions/61551404/in-blazor-how-to-call-a-function-at-page-load-event-name
+        void Init( ) {
+            if ( initialized )
+                return;
+            lxc.Init( );
+            try {
+                lexicon = lxc.ReadEntireLexicon( lexicon.InternalDictionaryName );
+            }
+            //HACK: this deletes the entire database if something fails to read. This is atrocious.
+            // This is a travesty.
+            catch ( Exception e ) {
+                if ( e.Message == "There was no row to read!" ) {
+                    lxc.SaveLexicon( lexicon );
+                }
+            }
+            StateHasChanged( );
+            initialized = true;
+        }
+        void Clickma( string word ) {
+            if ( !initialized )
+                return;
+            selectedWord = lexicon.GetEntry( word );
+        }
+
+        protected override async Task OnInitializedAsync( ) {
+             var authState = await ASP.GetAuthenticationStateAsync();
+            if(authState.User.Identity.Name is not null) {
+
+                if ( !initialized )
+                    Init( );
+            }
+        }
+
+        //end stol
+        }
+
+    </Authorized>
+    <NotAuthorized>
+        <PageTitle>Dictionary Editor</PageTitle>
+        <h1> Dictionary Editor </h1>
+
+        <p>Sorry, you'll need to log in to view this page.</p>
+    </NotAuthorized>
+</AuthorizeView>

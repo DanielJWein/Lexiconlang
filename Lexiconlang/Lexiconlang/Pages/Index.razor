@@ -1,0 +1,13 @@
+﻿@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>Lexiconlang</h1>
+<AuthorizeView>
+    <Authorized>
+        Choose a tab on the left to begin.
+    </Authorized>
+    <NotAuthorized>
+        <a href="/Identity/Account/Login">Login</a> to begin.
+    </NotAuthorized>
+</AuthorizeView>

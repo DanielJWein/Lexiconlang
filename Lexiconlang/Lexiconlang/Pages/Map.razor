@@ -1,0 +1,221 @@
+﻿@page "/map"
+@using Lexiconlang.Data
+@using System.Drawing
+@using Lexiconlang.Data.Database;
+@using Lexiconlang.Data.Map
+@inject IJSRuntime JS
+
+<PageTitle>Lexiconlang Map Editor</PageTitle>
+<h1>Map Editor</h1>
+
+<AuthorizeView>
+    <Authorized>
+        <InputFile OnChange="@UploadImage" />
+        <label for="colorPicker">Path Color</label>
+        <input type="color" id="colorPicker" @bind-value="PathColorString" />
+        <button @onclick="clearMap">Clear map</button>
+        <br />
+
+        <canvas id="drawArea0" width="400" height="400" @onkeydown="MoveView" tabindex="0" @onmousedown="PathStart" @onmouseup="PathEnd" @onmousemove="PathRecord" />
+        <canvas id="drawArea1" width="400" height="400" @onkeydown="MoveView" tabindex="0" @onmousedown="PathStart" @onmouseup="PathEnd" @onmousemove="PathRecord" />
+        <!--<canvas id="drawArea2" width="400" height="400" @onkeydown="MoveView" tabindex="0" @onmousedown="PathStart" @onmouseup="PathEnd" @onmousemove="PathRecord" />-->
+
+    </Authorized>
+    <NotAuthorized>
+        <p> Sorry, you'll need to log in to view this page.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    string pathColorString = "#000000";
+    string PathColorString {
+        get => pathColorString;
+        set {
+            if(value != pathColorString) {
+                pathColorString = value;
+                pathColor = Color.FromArgb(int.Parse(value.Substring(1), System.Globalization.NumberStyles.HexNumber)  | unchecked((int)0xFF000000));
+            }
+        }
+    }
+    Color pathColor = Color.Black;
+    CanvasMap map = new();
+    Coordinate topLeft = default(Coordinate);
+    PathData? currentPath = null;
+    CanvasDatabase cd = new();
+    double viewerScale = 1.0;
+    bool canvasIsSetup = false;
+
+    void clearMap() {
+        cd.DestroyAndAnnihilateEverything();
+        map = cd.ReadMap("default", 1);
+    }
+
+    /// <summary>
+    /// Starts recording a path from mouse input
+    /// </summary>
+    void PathStart(MouseEventArgs arr)
+        => currentPath = new("default", default(Coordinate), 1, -2) {
+                Color = pathColor
+        };
+
+    /// <summary>
+    /// Stops recording a path from mouse input
+    /// </summary>
+    void PathEnd( MouseEventArgs arr ) {
+        //This event fired late and has missed the path.
+        if (currentPath is null)
+            return;
+
+        //Set the ID to be unique
+        currentPath.ID = CanvasItem.id_last++;
+        //Add it to the map
+        map.items.Add( currentPath );
+        //Register it to the database
+        cd.RegisterPath( currentPath );
+        //Delete the reference to currentPath
+        currentPath = null;
+    }
+    /// <summary>
+    /// Records a point in the path from mouse input
+    /// </summary>
+    void PathRecord( MouseEventArgs arr ) {
+        //Make sure we're actually recording a path
+        if ( currentPath is null )
+            return;
+
+        Coordinate a = new(arr.OffsetX, arr.OffsetY);
+        currentPath?.Points?.Add( a );
+    }
+
+    /// <summary>
+    /// Handles arrow key keyboard input.
+    /// </summary>
+    void MoveView( KeyboardEventArgs args ) {
+        const int magnitude = 100;
+        if ( args.Key == "ArrowLeft" )
+            topLeft.x -= magnitude;
+
+        if ( args.Key == "ArrowRight" )
+            topLeft.x += magnitude;
+
+        if ( args.Key == "ArrowUp" )
+            topLeft.y -= magnitude;
+
+        if ( args.Key == "ArrowDown" )
+            topLeft.y += magnitude;
+
+        //if ( args.Key == "l" )
+        //    viewerScale -= 0.1;
+
+        //if ( args.Key == "o" )
+        //    viewerScale += 0.1;
+    }
+    /// <summary>
+    /// Sets up the map view
+    /// </summary>
+    protected async override void OnInitialized( ) {
+        GC.Collect( );
+        cd.Init( );
+        map = cd.ReadMap( "default", 1 );
+
+        if ( map.items.Any( ) )
+            CanvasItem.id_last = map.items.Max( x => x.ID ) + 1;
+
+        try
+        {
+            await JS.InvokeVoidAsync("canvas_draw_begin", null);
+            await JS.InvokeVoidAsync("canvas_resize", null);
+            await JS.InvokeVoidAsync("canvas_draw_end", null);
+        }
+        catch {
+
+        }
+        StateHasChanged( );
+    }
+    /// <summary>
+    /// Renders paths
+    /// </summary>
+    /// <param name="p">The path to render</param>
+    private async Task renderPath( PathData p ) {
+        if(!p.Points.Any()) {
+            return;
+        }
+        //var pointData2 = MapHelper.ScaleCoordinates(p.Points, p.Scale  ).ToArray();
+        //pointData2 = MapHelper.TranslateCoordinates(pointData2, topLeft).ToArray();
+
+        var pointData = p.Points.Select(x =>x.ToDoublePair()).ToArray();
+
+        await JS.InvokeVoidAsync(
+            "canvas_draw_path",
+            pointData,
+            p.Color.ToJSColor()
+        );
+
+        pointData = null;
+    }
+
+    /// <summary>
+    /// Renders images
+    /// </summary>
+    /// <param name="i">The image to render</param>
+    /// <returns></returns>
+    private async Task renderImage( ImageData i )
+        => await JS.InvokeVoidAsync( "canvas_draw_image", i.ID, i.Location.x + topLeft.x, i.Location.y + topLeft.y, i.Scale  );
+
+    /// <summary>
+    /// Runs after a render
+    /// </summary>
+    /// <param name="firstRender">Passed to base</param>
+    protected override async Task OnAfterRenderAsync( bool firstRender ) {
+        if ( !canvasIsSetup ) {
+            await JS.InvokeVoidAsync( "canvas_setup", null );
+            canvasIsSetup = true;
+        }
+        await JS.InvokeVoidAsync( "canvas_draw_begin", null );
+        if ( currentPath != null ) {
+            await renderPath( currentPath );
+        }
+        int numItems = map.items.Count();
+        for(int z = 0; z < numItems;z++) {
+           // var v = map.items.ElementAt(z);
+            if ( map.items.ElementAt( z ) is ImageData  ) {
+            await renderImage( (ImageData)map.items.ElementAt( z ) );
+            }
+            if ( map.items.ElementAt( z ) is PathData   ) {
+            await renderPath( (PathData)map.items.ElementAt( z ) );
+            }
+        }
+        await JS.InvokeVoidAsync( "canvas_draw_end", null );
+        await base.OnAfterRenderAsync( firstRender );
+    }
+
+    /// <summary>
+    /// Uploads an image file to the map
+    /// </summary>
+    private async Task UploadImage( InputFileChangeEventArgs e ) {
+        if ( e.FileCount > 1 )
+            return;
+        if ( !e.File.ContentType.StartsWith( "image" ) )
+            return;
+        try {
+            MemoryStream MS = new MemoryStream();
+            var iS = e.File.OpenReadStream(4 * 1024 * 1024);
+
+            await iS.CopyToAsync( MS );
+            Image i = Image.FromStream(MS);
+            if ( i.Width * i.Height > 2e6 ) {
+                i.Dispose( );
+                return;
+            }
+            var image = new ImageData("default", i);
+            map.AddImage( image );
+            cd.RegisterImage( image );
+            MS.Position = 0;
+            byte[] blobData = MS.ToArray();
+            await JS.InvokeVoidAsync( "create_image", image.ID, blobData, i.Width, i.Height );
+        }
+        catch {
+
+        }
+    }
+}
